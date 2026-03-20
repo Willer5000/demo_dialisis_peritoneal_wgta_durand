@@ -1291,8 +1291,9 @@ if st.session_state.pagina == "informe":
         st.session_state.pagina = "principal"
         st.rerun()
 
+
 # ============================================================
-# PÁGINA: AYUDA CICLADORA (con voz mejorada - SIN DOBLE)
+# PÁGINA: AYUDA CICLADORA (con voz mejorada - AUTO FUNCIONA)
 # ============================================================
 if st.session_state.pagina == "ayuda_cicladora":
     from gtts import gTTS
@@ -1441,7 +1442,7 @@ if st.session_state.pagina == "ayuda_cicladora":
     col_v1, col_v2, col_v3, col_v4, col_v5 = st.columns([1, 1, 1, 1, 2])
     
     with col_v1:
-        # Botón AUTO (evitar doble reproducción)
+        # Botón AUTO
         if st.button("🔊 AUTO" if not st.session_state.voz_automatica else "🔇 AUTO", 
                     use_container_width=True,
                     key="btn_auto_voz"):
@@ -1460,7 +1461,7 @@ if st.session_state.pagina == "ayuda_cicladora":
             st.rerun()
     
     with col_v2:
-        # Botón STOP (detiene todo)
+        # Botón STOP
         if st.button("⏹️ STOP", use_container_width=True, key="btn_stop_voz"):
             st.markdown(detener_todos_audios(), unsafe_allow_html=True)
             st.session_state.reproduciendo_voz = False
@@ -1486,6 +1487,7 @@ if st.session_state.pagina == "ayuda_cicladora":
         # Botón REPETIR PASO
         if st.button("🔁 REPETIR", use_container_width=True, key="btn_repetir_voz"):
             st.session_state.reproduciendo_voz = True
+            st.rerun()
     
     with col_v5:
         # Info del estado
@@ -1507,7 +1509,7 @@ if st.session_state.pagina == "ayuda_cicladora":
                 # Detener audio actual antes de cambiar
                 st.markdown(detener_todos_audios(), unsafe_allow_html=True)
                 st.session_state.paso_cicladora = i+1
-                st.session_state.ultimo_paso_hablado = None
+                st.session_state.ultimo_paso_hablado = None  # RESET para que AUTO vuelva a hablar
                 st.session_state.reproduciendo_voz = False
                 st.session_state.voz_pausada = False
                 st.rerun()
@@ -1520,32 +1522,30 @@ if st.session_state.pagina == "ayuda_cicladora":
     st.progress(progreso, text=f"Paso {st.session_state.paso_cicladora} de 9")
     
     # ============================================================
-    # FUNCIÓN PARA MOSTRAR PASO CON VOZ (SIN DUPLICADOS)
+    # FUNCIÓN PARA MOSTRAR PASO CON VOZ (AUTO FUNCIONA)
     # ============================================================
     def mostrar_paso_con_voz(numero, titulo, contenido_lista, texto_voz):
-        """Muestra un paso y maneja la voz SIN duplicados"""
+        """Muestra un paso y maneja la voz - AUTO funciona en todos los pasos"""
         
-        # Determinar si debe reproducir voz automáticamente (solo una vez)
-        debe_hablar_auto = (st.session_state.voz_automatica and 
-                           st.session_state.ultimo_paso_hablado != numero and
-                           not st.session_state.reproduciendo_voz)
-        
-        # Determinar si debe repetir el paso
-        debe_repetir = (st.session_state.reproduciendo_voz and 
-                       st.session_state.ultimo_paso_hablado == numero)
-        
-        # Reproducir voz si corresponde (solo una acción)
-        if debe_hablar_auto or debe_repetir:
-            # Actualizar estado
+        # Si AUTO está activado y este paso NO se ha hablado aún
+        if st.session_state.voz_automatica and st.session_state.ultimo_paso_hablado != numero:
+            # Reproducir automáticamente
             st.session_state.ultimo_paso_hablado = numero
             st.session_state.reproduciendo_voz = False
             st.session_state.voz_pausada = False
             
-            # Generar y mostrar audio (una sola vez)
             audio_html = reproducir_paso(texto_voz, numero)
             st.markdown(audio_html, unsafe_allow_html=True)
         
-        # Mostrar contenido del paso (usando columnas para mejor espaciado)
+        # Si se solicitó REPETIR este paso
+        if st.session_state.reproduciendo_voz and st.session_state.ultimo_paso_hablado == numero:
+            st.session_state.reproduciendo_voz = False
+            st.session_state.voz_pausada = False
+            
+            audio_html = reproducir_paso(texto_voz, numero)
+            st.markdown(audio_html, unsafe_allow_html=True)
+        
+        # Mostrar contenido del paso
         st.markdown(f"""
         <div class="paso-card" style="background: white; padding: 1.5rem; border-radius: 15px; 
                     border-left: 5px solid #ec4899; margin: 1rem 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
@@ -1579,7 +1579,7 @@ if st.session_state.pagina == "ayuda_cicladora":
         if st.button("✅ PASO 2", use_container_width=True, key="paso1_next"):
             st.markdown(detener_todos_audios(), unsafe_allow_html=True)
             st.session_state.paso_cicladora = 2
-            st.session_state.ultimo_paso_hablado = None
+            st.session_state.ultimo_paso_hablado = None  # RESET para que AUTO funcione
             st.session_state.reproduciendo_voz = False
             st.rerun()
     
