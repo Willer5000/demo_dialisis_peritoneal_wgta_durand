@@ -1292,7 +1292,7 @@ if st.session_state.pagina == "informe":
         st.rerun()
 
 # ============================================================
-# PÁGINA: AYUDA CICLADORA (con voz mejorada - sin eco, con pausa)
+# PÁGINA: AYUDA CICLADORA (con voz mejorada - sin eco)
 # ============================================================
 if st.session_state.pagina == "ayuda_cicladora":
     from gtts import gTTS
@@ -1302,8 +1302,8 @@ if st.session_state.pagina == "ayuda_cicladora":
     if "voz_automatica" not in st.session_state:
         st.session_state.voz_automatica = False
     
-    if "reproduciendo_voz" not in st.session_state:
-        st.session_state.reproduciendo_voz = False
+    if "voz_pausada" not in st.session_state:
+        st.session_state.voz_pausada = False
     
     if "ultimo_paso_hablado" not in st.session_state:
         st.session_state.ultimo_paso_hablado = None
@@ -1311,69 +1311,8 @@ if st.session_state.pagina == "ayuda_cicladora":
     if "audio_actual" not in st.session_state:
         st.session_state.audio_actual = None
     
-    if "voz_pausada" not in st.session_state:
-        st.session_state.voz_pausada = False
-    
-    # Script JavaScript mejorado para control de audio
-    st.markdown("""
-    <script>
-    // Variable global para el audio actual
-    let currentAudio = null;
-    let isPaused = false;
-    
-    function reproducirAudio(base64Audio) {
-        // Detener audio anterior si existe
-        if (currentAudio) {
-            currentAudio.pause();
-            currentAudio.currentTime = 0;
-        }
-        
-        // Crear nuevo audio
-        currentAudio = new Audio('data:audio/mp3;base64,' + base64Audio);
-        currentAudio.play();
-        isPaused = false;
-        
-        // Actualizar estado en Streamlit
-        window.parent.postMessage({
-            type: 'streamlit:setComponentValue',
-            value: {audio_playing: true, audio_paused: false}
-        }, '*');
-    }
-    
-    function pausarReanudarAudio() {
-        if (!currentAudio) return;
-        
-        if (isPaused) {
-            currentAudio.play();
-            isPaused = false;
-        } else {
-            currentAudio.pause();
-            isPaused = true;
-        }
-        
-        // Actualizar estado
-        window.parent.postMessage({
-            type: 'streamlit:setComponentValue',
-            value: {audio_paused: isPaused}
-        }, '*');
-    }
-    
-    function detenerAudio() {
-        if (currentAudio) {
-            currentAudio.pause();
-            currentAudio.currentTime = 0;
-            isPaused = false;
-        }
-    }
-    
-    function estaReproduciendo() {
-        return currentAudio && !currentAudio.paused && !isPaused;
-    }
-    </script>
-    """, unsafe_allow_html=True)
-    
-    def generar_audio_base64(texto, idioma='es'):
-        """Genera audio y devuelve solo el base64 (sin HTML)"""
+    def generar_audio_simple(texto, idioma='es'):
+        """Genera solo el base64 del audio sin HTML"""
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
                 tts = gTTS(text=texto, lang=idioma, slow=False)
@@ -1387,101 +1326,117 @@ if st.session_state.pagina == "ayuda_cicladora":
             st.error(f"Error generando audio: {e}")
             return None
     
-    def reproducir_audio(audio_base64):
-        """Reproduce audio usando JavaScript"""
-        if audio_base64:
-            st.markdown(f"""
-            <script>
-            (function() {{
-                const audioBase64 = '{audio_base64}';
-                if (window.currentAudio) {{
-                    window.currentAudio.pause();
-                    window.currentAudio.currentTime = 0;
+    def audio_html(audio_base64, autoplay=True, audio_id=None):
+        """Genera HTML con audio y controles"""
+        if audio_id is None:
+            audio_id = f"audio_{int(time.time()*1000)}"
+        
+        autoplay_attr = "autoplay" if autoplay else ""
+        return f'''
+        <div style="margin: 5px 0; display: none;">
+            <audio id="{audio_id}" {autoplay_attr} controls style="width: 100%; height: 40px;">
+                <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
+            </audio>
+        </div>
+        <script>
+        (function() {{
+            var audio = document.getElementById('{audio_id}');
+            if (audio) {{
+                // Eliminar duplicados
+                var audiosMismos = document.querySelectorAll('audio[src*="{audio_base64.substring(0, 20)}"]');
+                if (audiosMismos.length > 1) {{
+                    for(var i=1; i<audiosMismos.length; i++) {{
+                        audiosMismos[i].remove();
+                    }}
                 }}
-                window.currentAudio = new Audio('data:audio/mp3;base64,' + audioBase64);
-                window.currentAudio.play();
-                window.isPaused = false;
-            }})();
-            </script>
-            """, unsafe_allow_html=True)
-            return True
-        return False
-    
-    def detener_audio():
-        """Detiene cualquier audio reproduciéndose"""
-        st.markdown("""
-        <script>
-        if (window.currentAudio) {
-            window.currentAudio.pause();
-            window.currentAudio.currentTime = 0;
-            window.isPaused = false;
-        }
+            }}
+        }})();
         </script>
-        """, unsafe_allow_html=True)
+        '''
     
-    def pausar_reanudar_audio():
-        """Pausa o reanuda el audio actual"""
-        st.markdown("""
-        <script>
-        if (window.currentAudio) {
-            if (window.isPaused) {
-                window.currentAudio.play();
-                window.isPaused = false;
-            } else {
-                window.currentAudio.pause();
-                window.isPaused = true;
+    def control_voz_html():
+        """Genera controles globales de voz"""
+        return '''
+        <div style="background: #f8f9fa; padding: 10px; border-radius: 10px; margin: 10px 0;">
+            <script>
+            var audioElements = [];
+            
+            function pausarTodos() {
+                document.querySelectorAll('audio').forEach(audio => {
+                    if (!audio.paused) {
+                        audio.pause();
+                        audioElements.push(audio);
+                    }
+                });
             }
-        }
-        </script>
-        """, unsafe_allow_html=True)
-        st.session_state.voz_pausada = not st.session_state.voz_pausada
+            
+            function reanudarTodos() {
+                audioElements.forEach(audio => {
+                    audio.play().catch(e => console.log('Error al reanudar:', e));
+                });
+                audioElements = [];
+            }
+            
+            function detenerTodos() {
+                document.querySelectorAll('audio').forEach(audio => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                });
+                audioElements = [];
+            }
+            </script>
+        </div>
+        '''
     
     st.markdown("---")
     st.markdown("## 🤖 GUÍA INTERACTIVA - CICLADORA BAXTER")
     
     # ============================================================
-    # CONTROLES DE VOZ MEJORADOS (4 botones)
+    # CONTROLES DE VOZ MEJORADOS
     # ============================================================
     col_v1, col_v2, col_v3, col_v4, col_v5 = st.columns([1, 1, 1, 1, 2])
     
     with col_v1:
         # Botón AUTO
-        if st.button("🔊 AUTO" if not st.session_state.voz_automatica else "🔇 AUTO", 
-                    use_container_width=True,
-                    type="primary" if st.session_state.voz_automatica else "secondary"):
+        btn_label = "🔊 AUTO" if not st.session_state.voz_automatica else "🔇 AUTO"
+        btn_type = "primary" if st.session_state.voz_automatica else "secondary"
+        if st.button(btn_label, use_container_width=True, type=btn_type):
             st.session_state.voz_automatica = not st.session_state.voz_automatica
-            st.session_state.ultimo_paso_hablado = None
+            # No resetear ultimo_paso_hablado para evitar doble reproducción
             st.rerun()
     
     with col_v2:
-        # Botón PLAY/PAUSA
+        # Botón PAUSA/REANUDAR
         if st.button("⏸️ PAUSA" if not st.session_state.voz_pausada else "▶️ REANUDAR", 
-                    use_container_width=True,
-                    type="secondary"):
-            pausar_reanudar_audio()
+                    use_container_width=True, type="secondary"):
+            st.session_state.voz_pausada = not st.session_state.voz_pausada
+            if st.session_state.voz_pausada:
+                st.markdown('<script>pausarTodos();</script>', unsafe_allow_html=True)
+            else:
+                st.markdown('<script>reanudarTodos();</script>', unsafe_allow_html=True)
             st.rerun()
     
     with col_v3:
         # Botón STOP
         if st.button("⏹️ STOP", use_container_width=True, type="secondary"):
-            detener_audio()
-            st.session_state.reproduciendo_voz = False
+            st.markdown('<script>detenerTodos();</script>', unsafe_allow_html=True)
             st.session_state.voz_pausada = False
             st.success("🔇 Reproducción detenida")
-            st.rerun()
     
     with col_v4:
-        # Botón REPETIR
+        # Botón REPETIR PASO
         if st.button("🔁 REPETIR", use_container_width=True, type="secondary"):
-            st.session_state.reproduciendo_voz = True
-            st.session_state.voz_pausada = False
-            st.rerun()
+            st.session_state.repetir_paso = True
     
     with col_v5:
-        estado = "✅ AUTO ON" if st.session_state.voz_automatica else "⏸️ AUTO OFF"
-        estado += " | ⏸️ PAUSA" if st.session_state.voz_pausada else " | ▶️ REPRODUCIENDO" if st.session_state.reproduciendo_voz else ""
-        st.markdown(f"<div style='text-align: right; font-size: 0.9rem;'>{estado}</div>", unsafe_allow_html=True)
+        # Info del estado
+        estado_auto = "✅ AUTO ON" if st.session_state.voz_automatica else "⏸️ AUTO OFF"
+        estado_pausa = "⏸️ PAUSADO" if st.session_state.voz_pausada else "▶️ REPRODUCIENDO"
+        st.markdown(f"<div style='text-align: right;'><small>{estado_auto} | {estado_pausa}</small></div>", 
+                   unsafe_allow_html=True)
     
+    # Incluir controles JavaScript
+    st.markdown(control_voz_html(), unsafe_allow_html=True)
     st.markdown("---")
     
     # ============================================================
@@ -1489,55 +1444,55 @@ if st.session_state.pagina == "ayuda_cicladora":
     # ============================================================
     st.markdown("### 🔢 Saltar a paso:")
     cols = st.columns(9)
-    pasos = range(1, 10)
     for i, col in enumerate(cols):
         with col:
             if st.button(str(i+1), key=f"paso_btn_{i+1}"):
                 st.session_state.paso_cicladora = i+1
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                st.session_state.voz_pausada = False
-                detener_audio()
+                st.session_state.repetir_paso = False
                 st.rerun()
     
     # Inicializar paso actual
     if "paso_cicladora" not in st.session_state:
         st.session_state.paso_cicladora = 1
     
+    if "repetir_paso" not in st.session_state:
+        st.session_state.repetir_paso = False
+    
     progreso = st.session_state.paso_cicladora / 9
     st.progress(progreso, text=f"Paso {st.session_state.paso_cicladora} de 9")
     
     # ============================================================
-    # FUNCIÓN PARA MOSTAR PASO CON VOZ (SIN ECO)
+    # FUNCIÓN PARA MOSTRAR PASO CON VOZ (SIN DOBLE AUDIO)
     # ============================================================
-    def mostrar_paso(numero, titulo, contenido_lista, texto_voz):
-        """Muestra un paso y maneja la voz automática (sin duplicados)"""
+    def mostrar_paso_con_voz(numero, titulo, contenido_lista, texto_voz):
+        """Muestra un paso y maneja la voz sin duplicados"""
         
-        # Generar audio base64
-        audio_base64 = generar_audio_base64(texto_voz)
-        
-        # Determinar si debe reproducir voz automáticamente (solo si AUTO activado y no se ha hablado este paso)
-        if (st.session_state.voz_automatica and 
-            st.session_state.ultimo_paso_hablado != numero and 
-            not st.session_state.reproduciendo_voz):
+        # Determinar si debe reproducir voz
+        debe_reproducir = False
+        if st.session_state.voz_automatica and st.session_state.ultimo_paso_hablado != numero:
+            debe_reproducir = True
             st.session_state.ultimo_paso_hablado = numero
-            st.session_state.reproduciendo_voz = True
-            reproducir_audio(audio_base64)
         
-        # Si se solicitó repetir el paso
-        if st.session_state.reproduciendo_voz and st.session_state.ultimo_paso_hablado == numero:
-            detener_audio()  # Detener cualquier audio anterior
-            time.sleep(0.1)  # Pequeña pausa para evitar conflictos
-            reproducir_audio(audio_base64)
-            st.session_state.reproduciendo_voz = False
+        if st.session_state.repetir_paso and st.session_state.ultimo_paso_hablado == numero:
+            debe_reproducir = True
+            st.session_state.repetir_paso = False
+        
+        # Generar y reproducir audio si es necesario (UNA SOLA VEZ)
+        if debe_reproducir and not st.session_state.voz_pausada:
+            audio_b64 = generar_audio_simple(texto_voz)
+            if audio_b64:
+                audio_id = f"audio_paso_{numero}"
+                st.markdown(audio_html(audio_b64, autoplay=True, audio_id=audio_id), 
+                           unsafe_allow_html=True)
         
         # Mostrar contenido del paso
-        items_html = ''.join([f'<li>{item}</li>' for item in contenido_lista])
         st.markdown(f"""
-        <div class="paso-card" style="background: white; padding: 1.5rem; border-radius: 15px; margin: 1rem 0; border-left: 5px solid #ec4899; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-            <h4 style="color: #831843; font-size: 1.5rem;">{titulo}</h4>
-            <ul style="font-size: 1.1rem; line-height: 1.8;">
-                {items_html}
+        <div class="paso-card" style="background: white; padding: 1.5rem; border-radius: 15px; 
+                    border-left: 5px solid #ec4899; margin: 1rem 0;">
+            <h4 style="color: #831843; margin-bottom: 1rem;">{titulo}</h4>
+            <ul style="list-style-type: none; padding-left: 0;">
+                {''.join([f'<li style="margin: 0.5rem 0; font-size: 1.1rem;">{item}</li>' for item in contenido_lista])}
             </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -1547,20 +1502,18 @@ if st.session_state.pagina == "ayuda_cicladora":
     # ============================================================
     if st.session_state.paso_cicladora == 1:
         contenido = [
-            "🔌 Enciende el equipo (botón posterior)",
-            "⏳ Espera la pantalla de inicio",
-            "✅ Presiona botón verde 'GO'",
-            "📏 Selecciona 'Modo volumen pequeño' y presiona verde"
+            "🔌 <strong>Encender:</strong> Botón en la parte POSTERIOR",
+            "⏳ <strong>Esperar:</strong> Pantalla de inicio",
+            "✅ <strong>Presionar:</strong> Botón verde 'GO'",
+            "📏 <strong>Seleccionar:</strong> 'Modo volumen pequeño' y presionar verde"
         ]
-        texto_voz = "Paso 1: Preparación inicial. Enciende el equipo con el botón posterior. Espera la pantalla de inicio. Presiona el botón verde GO. Selecciona Modo volumen pequeño y presiona verde nuevamente."
+        texto_voz = "Paso 1: Preparación inicial. Enciende el equipo con el botón en la parte posterior. Espera la pantalla de inicio. Presiona el botón verde GO. Selecciona Modo volumen pequeño y presiona verde nuevamente."
         
-        mostrar_paso(1, "⚡ PASO 1: PREPARACIÓN INICIAL", contenido, texto_voz)
+        mostrar_paso_con_voz(1, "⚡ PASO 1: PREPARACIÓN INICIAL", contenido, texto_voz)
         
         if st.button("✅ PASO 2", use_container_width=True):
             st.session_state.paso_cicladora = 2
             st.session_state.ultimo_paso_hablado = None
-            st.session_state.reproduciendo_voz = False
-            detener_audio()
             st.rerun()
     
     # ============================================================
@@ -1568,31 +1521,27 @@ if st.session_state.pagina == "ayuda_cicladora":
     # ============================================================
     elif st.session_state.paso_cicladora == 2:
         contenido = [
-            "📎 Saca el cassette del envoltorio",
-            "🔓 Levanta la manija, inserta cassette (parte blanda hacia máquina)",
-            "🔒 Cierra la puerta (debe hacer clic)",
-            "🧩 Acomoda el organizador azul",
-            "📌 Cierra las 6 pinzas",
-            "🗑️ Línea de drenaje en bidón vacío"
+            "📎 <strong>Cassette:</strong> Sacar del envoltorio",
+            "🔓 <strong>Abrir:</strong> Levantar manija, insertar cassette (parte blanda hacia máquina)",
+            "🔒 <strong>Cerrar:</strong> Bajar palanca (debe hacer clic)",
+            "🧩 <strong>Organizador:</strong> Acomodar el azul",
+            "📌 <strong>Pinzas:</strong> Cerrar las 6",
+            "🗑️ <strong>Drenaje:</strong> Línea en bidón vacío"
         ]
-        texto_voz = "Paso 2: Colocar el cassette. Saca el cassette del envoltorio. Levanta la manija, inserta el cassette con la parte blanda hacia la máquina. Cierra la puerta. Acomoda el organizador azul. Cierra las 6 pinzas. Coloca la línea de drenaje en el bidón."
+        texto_voz = "Paso 2: Colocar el cassette. Saca el cassette del envoltorio. Levanta la manija, inserta el cassette con la parte blanda hacia la máquina. Cierra la puerta. Acomoda el organizador azul. Cierra las 6 pinzas. Coloca la línea de drenaje en el bidón vacío."
         
-        mostrar_paso(2, "📦 PASO 2: COLOCAR EL CASSETTE", contenido, texto_voz)
+        mostrar_paso_con_voz(2, "📦 PASO 2: COLOCAR EL CASSETTE", contenido, texto_voz)
         
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⬅️ PASO 1", use_container_width=True):
                 st.session_state.paso_cicladora = 1
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
         with col2:
             if st.button("✅ PASO 3", use_container_width=True):
                 st.session_state.paso_cicladora = 3
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
     
     # ============================================================
@@ -1600,29 +1549,25 @@ if st.session_state.pagina == "ayuda_cicladora":
     # ============================================================
     elif st.session_state.paso_cicladora == 3:
         contenido = [
-            "⏳ La máquina hará un test automático",
-            "🧼 Lávate las manos (40 segundos)",
-            "✅ Prepara las bolsas",
-            "🔔 La máquina pitará al terminar"
+            "⏳ <strong>Test automático:</strong> La máquina se autocomprueba",
+            "🧼 <strong>Lavado:</strong> Manos profundamente (40 segundos)",
+            "✅ <strong>Preparar:</strong> Bolsas para siguiente paso",
+            "🔔 <strong>Aviso:</strong> La máquina pitará al terminar"
         ]
-        texto_voz = "Paso 3: Autocomprobación. La máquina hará un test automático. Mientras, lávate las manos profundamente por 40 segundos."
+        texto_voz = "Paso 3: Autocomprobación. La máquina hará un test automático. Mientras tanto, lávate las manos profundamente por 40 segundos. Prepara las bolsas para el siguiente paso. La máquina pitará cuando termine."
         
-        mostrar_paso(3, "🔄 PASO 3: AUTOCOMPROBACIÓN", contenido, texto_voz)
+        mostrar_paso_con_voz(3, "🔄 PASO 3: AUTOCOMPROBACIÓN", contenido, texto_voz)
         
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⬅️ PASO 2", use_container_width=True):
                 st.session_state.paso_cicladora = 2
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
         with col2:
             if st.button("✅ PASO 4", use_container_width=True):
                 st.session_state.paso_cicladora = 4
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
     
     # ============================================================
@@ -1630,30 +1575,26 @@ if st.session_state.pagina == "ayuda_cicladora":
     # ============================================================
     elif st.session_state.paso_cicladora == 4:
         contenido = [
-            "🔵 Coloca pinzas azules en las bolsas",
-            "🔴 Afloja espiga del clamp ROJO (bolsa superior)",
-            "⚪ Afloja espiga del clamp BLANCO (segunda bolsa)",
-            "💡 La espiga roja SIEMPRE a la bolsa de arriba",
-            "🖐️ Rompe la mariposa y conecta"
+            "🔵 <strong>Pinzas:</strong> Colocar azules en las bolsas",
+            "🔴 <strong>Clamp ROJO:</strong> Aflojar espiga (bolsa superior - calentada)",
+            "⚪ <strong>Clamp BLANCO:</strong> Aflojar espiga (segunda bolsa)",
+            "💡 <strong>Importante:</strong> Espiga roja SIEMPRE a bolsa superior",
+            "🖐️ <strong>Conectar:</strong> Romper mariposa y conectar espiga"
         ]
-        texto_voz = "Paso 4: Conectar bolsas. Coloca pinzas azules. Afloja espiga del clamp rojo que va a la bolsa superior. Afloja espiga del clamp blanco para segunda bolsa. La espiga roja siempre va a la bolsa de arriba. Rompe la mariposa y conecta."
+        texto_voz = "Paso 4: Conectar bolsas. Coloca las pinzas azules en las bolsas. Afloja la espiga del clamp rojo que va a la bolsa superior. Afloja la espiga del clamp blanco para la segunda bolsa. La espiga roja siempre va a la bolsa de arriba. Sujeta la pinza, rompe la mariposa y conecta la espiga."
         
-        mostrar_paso(4, "🧴 PASO 4: CONECTAR BOLSAS", contenido, texto_voz)
+        mostrar_paso_con_voz(4, "🧴 PASO 4: CONECTAR BOLSAS", contenido, texto_voz)
         
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⬅️ PASO 3", use_container_width=True):
                 st.session_state.paso_cicladora = 3
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
         with col2:
             if st.button("✅ PASO 5", use_container_width=True):
                 st.session_state.paso_cicladora = 5
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
     
     # ============================================================
@@ -1661,30 +1602,26 @@ if st.session_state.pagina == "ayuda_cicladora":
     # ============================================================
     elif st.session_state.paso_cicladora == 5:
         contenido = [
-            "🔓 Retira pinzas azules",
-            "🚰 Abre clamp rojo y blanco",
-            "🩺 Abre clamp de línea paciente",
-            "✅ Presiona verde 'CONTINUAR'",
-            "⏳ La máquina purga automáticamente"
+            "🔓 <strong>Pinzas:</strong> Retirar azules",
+            "🚰 <strong>Clamps:</strong> Abrir rojo y blanco",
+            "🩺 <strong>Paciente:</strong> Abrir clamp de línea",
+            "✅ <strong>Continuar:</strong> Presionar verde",
+            "⏳ <strong>Cebado:</strong> Máquina purga automáticamente"
         ]
-        texto_voz = "Paso 5: Cebado de líneas. Retira pinzas azules. Abre clamp rojo y blanco. Abre clamp de línea paciente. Presiona verde. La máquina purgará automáticamente."
+        texto_voz = "Paso 5: Cebado de líneas. Retira las pinzas azules. Abre los clamp rojo y blanco. Abre el clamp de la línea del paciente. Presiona el botón verde continuar. La máquina purgará las líneas automáticamente."
         
-        mostrar_paso(5, "💧 PASO 5: CEVADO DE LÍNEAS", contenido, texto_voz)
+        mostrar_paso_con_voz(5, "💧 PASO 5: CEVADO DE LÍNEAS", contenido, texto_voz)
         
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⬅️ PASO 4", use_container_width=True):
                 st.session_state.paso_cicladora = 4
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
         with col2:
             if st.button("✅ PASO 6", use_container_width=True):
                 st.session_state.paso_cicladora = 6
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
     
     # ============================================================
@@ -1692,31 +1629,27 @@ if st.session_state.pagina == "ayuda_cicladora":
     # ============================================================
     elif st.session_state.paso_cicladora == 6:
         contenido = [
-            "🔒 Cierra clamp de línea paciente",
-            "🧴 Limpia con alcohol",
-            "🔄 Conecta catéter",
-            "🔓 Abre catéter y clamp",
-            "✅ Presiona verde 'CONTINUAR'",
-            "📏 Selecciona 'Modo volumen pequeño'"
+            "🔒 <strong>Clamp:</strong> Cerrar línea paciente",
+            "🧴 <strong>Limpieza:</strong> Alcohol en conexión",
+            "🔄 <strong>Conectar:</strong> Catéter del paciente",
+            "🔓 <strong>Abrir:</strong> Catéter y clamp",
+            "✅ <strong>Continuar:</strong> Presionar verde",
+            "📏 <strong>Seleccionar:</strong> 'Modo volumen pequeño'"
         ]
-        texto_voz = "Paso 6: Conexión al paciente. Cierra clamp de línea paciente. Limpia zona con alcohol. Conecta catéter. Abre catéter y clamp. Presiona verde. Selecciona Modo volumen pequeño sin continuar aún."
+        texto_voz = "Paso 6: Conexión al paciente. Cierra el clamp de la línea del paciente. Limpia la zona de conexión con alcohol. Conecta el catéter del paciente. Abre el catéter y el clamp de la línea. Presiona el botón verde continuar. Selecciona Modo volumen pequeño sin presionar continuar aún."
         
-        mostrar_paso(6, "👤 PASO 6: CONEXIÓN AL PACIENTE", contenido, texto_voz)
+        mostrar_paso_con_voz(6, "👤 PASO 6: CONEXIÓN AL PACIENTE", contenido, texto_voz)
         
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⬅️ PASO 5", use_container_width=True):
                 st.session_state.paso_cicladora = 5
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
         with col2:
             if st.button("✅ PASO 7", use_container_width=True):
                 st.session_state.paso_cicladora = 7
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
     
     # ============================================================
@@ -1724,29 +1657,25 @@ if st.session_state.pagina == "ayuda_cicladora":
     # ============================================================
     elif st.session_state.paso_cicladora == 7:
         contenido = [
-            "🔍 'Verificar drenaje inicial'",
-            "⏳ Sale líquido del abdomen",
-            "🔄 Ciclos: INFUSIÓN → PERMANENCIA → DRENAJE",
-            "😴 Puedes dormir tranquilo"
+            "🔍 <strong>Verificar:</strong> Drenaje inicial",
+            "⏳ <strong>Drenaje:</strong> Sale líquido del abdomen",
+            "🔄 <strong>Ciclos:</strong> Infusión → Permanencia → Drenaje",
+            "😴 <strong>Descanso:</strong> Puedes dormir"
         ]
-        texto_voz = "Paso 7: Inicio del tratamiento. La máquina mostrará Verificar drenaje inicial. Verás el primer drenaje. Comenzarán los ciclos: Infusión, Permanencia, Drenaje. Puedes dormir tranquilo."
+        texto_voz = "Paso 7: Inicio del tratamiento. La máquina mostrará Verificar drenaje inicial. Verás el primer drenaje. Luego comenzarán los ciclos automáticos: infusión, permanencia y drenaje. Puedes dormir tranquilo, la máquina trabajará sola."
         
-        mostrar_paso(7, "🌙 PASO 7: INICIO DEL TRATAMIENTO", contenido, texto_voz)
+        mostrar_paso_con_voz(7, "🌙 PASO 7: INICIO DEL TRATAMIENTO", contenido, texto_voz)
         
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⬅️ PASO 6", use_container_width=True):
                 st.session_state.paso_cicladora = 6
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
         with col2:
             if st.button("✅ PASO 8", use_container_width=True):
                 st.session_state.paso_cicladora = 8
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
     
     # ============================================================
@@ -1754,32 +1683,28 @@ if st.session_state.pagina == "ayuda_cicladora":
     # ============================================================
     elif st.session_state.paso_cicladora == 8:
         contenido = [
-            "🔔 'FIN DE TRATAMIENTO'",
-            "⬇️ Flecha abajo hasta 'DRENAJE MANUAL'",
-            "⬅️ Confirma con flecha izquierda",
-            "⏳ Espera que termine drenaje",
-            "✅ Presiona verde 'CONTINUAR'",
-            "🔒 'CIERRE CLAMP' - cierra línea y catéter",
-            "✅ Presiona verde nuevamente"
+            "🔔 <strong>Fin:</strong> 'FIN DE TRATAMIENTO'",
+            "⬇️ <strong>Drenaje manual:</strong> Flecha abajo hasta 'DRENAJE MANUAL'",
+            "⬅️ <strong>Confirmar:</strong> Flecha izquierda",
+            "⏳ <strong>Esperar:</strong> Que termine drenaje",
+            "✅ <strong>Continuar:</strong> Presionar verde",
+            "🔒 <strong>Cierre:</strong> 'CIERRE CLAMP' - cerrar línea y catéter",
+            "✅ <strong>Finalizar:</strong> Presionar verde"
         ]
-        texto_voz = "Paso 8: Al despertar. La máquina mostrará FIN DE TRATAMIENTO. Presiona flecha abajo hasta DRENAJE MANUAL. Confirma. Espera que termine. Presiona verde. Cierra clamp de línea y catéter. Presiona verde."
+        texto_voz = "Paso 8: Al despertar. La máquina mostrará Fin de tratamiento. Presiona flecha hacia abajo hasta ver Drenaje manual. Confirma con flecha izquierda. Espera a que termine el drenaje. Presiona botón verde continuar. La máquina dirá Cierre clamp. Cierra línea y catéter. Presiona verde nuevamente."
         
-        mostrar_paso(8, "🌅 PASO 8: AL DESPERTAR", contenido, texto_voz)
+        mostrar_paso_con_voz(8, "🌅 PASO 8: AL DESPERTAR", contenido, texto_voz)
         
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⬅️ PASO 7", use_container_width=True):
                 st.session_state.paso_cicladora = 7
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
         with col2:
             if st.button("✅ PASO 9", use_container_width=True):
                 st.session_state.paso_cicladora = 9
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
     
     # ============================================================
@@ -1787,41 +1712,36 @@ if st.session_state.pagina == "ayuda_cicladora":
     # ============================================================
     elif st.session_state.paso_cicladora == 9:
         contenido = [
-            "🫱 'DESCONECTESE' - aplica alcohol",
-            "✅ Presiona verde",
-            "📤 'DESCONECTEME' - retira cassette",
-            "📝 ANOTA: Drenaje inicial, UF total, Tiempo permanencia, Tiempo perdido",
-            "🔌 Apaga el equipo",
-            "🎯 ¡TRATAMIENTO COMPLETADO!"
+            "🫱 <strong>Desconectarse:</strong> 'DESCONECTESE' - aplicar alcohol",
+            "✅ <strong>Continuar:</strong> Presionar verde",
+            "📤 <strong>Retirar:</strong> 'DESCONECTEME' - sacar cassette",
+            "📝 <strong>ANOTAR:</strong> Drenaje inicial, UF total, Tiempo permanencia, Tiempo perdido",
+            "🔌 <strong>Apagar:</strong> Botón posterior",
+            "🎯 <strong>Completado:</strong> ¡Tratamiento finalizado!"
         ]
-        texto_voz = "Paso 9: Registro de datos. La máquina dirá DESCONECTESE. Limpia y aplica alcohol. Presiona verde. DESCONECTEME. Anota: Drenaje inicial, UF total, Tiempo permanencia, Tiempo perdido. Apaga el equipo. Tratamiento completado."
+        texto_voz = "Paso 9: Registro de datos. La máquina dirá Desconéctese. Limpia y aplica alcohol. Presiona verde para continuar. La máquina dirá Desconécteme. Ahora anota estos valores: Drenaje inicial, Ultrafiltración total, Tiempo medio de permanencia y Tiempo perdido. Apaga el equipo con el botón posterior. Tratamiento completado."
         
-        mostrar_paso(9, "📋 PASO 9: REGISTRO DE DATOS", contenido, texto_voz)
+        mostrar_paso_con_voz(9, "📋 PASO 9: REGISTRO DE DATOS", contenido, texto_voz)
         
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⬅️ PASO 8", use_container_width=True):
                 st.session_state.paso_cicladora = 8
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
-                detener_audio()
                 st.rerun()
         with col2:
             if st.button("🏁 FINALIZAR", use_container_width=True):
                 st.session_state.paso_cicladora = 1
                 st.session_state.ultimo_paso_hablado = None
-                st.session_state.reproduciendo_voz = False
                 st.session_state.pagina = "principal"
-                detener_audio()
                 st.rerun()
     
     if st.button("❌ Cerrar guía", use_container_width=True):
         st.session_state.paso_cicladora = 1
         st.session_state.ultimo_paso_hablado = None
-        st.session_state.reproduciendo_voz = False
         st.session_state.pagina = "principal"
-        detener_audio()
         st.rerun()
+        
 # ============================================================
 # FOOTER
 # ============================================================
