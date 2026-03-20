@@ -1,0 +1,8 @@
+streamlit
+pandas
+plotly
+fpdf
+python-dotenv
+pytz
+matplotlib
+gtts
